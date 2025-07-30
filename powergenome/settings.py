@@ -74,6 +74,30 @@ logger = logging.getLogger(__name__)
 _current_settings: ContextVar = ContextVar("current_settings", default=None)
 
 
+class NoSettingsError(RuntimeError):
+    """Exception raised when no settings are currently set in the context.
+    
+    This exception is raised when trying to access current settings outside of
+    a settings context manager.
+    
+    Examples
+    --------
+    >>> from powergenome.settings import get_current_settings, NoSettingsError
+    >>> 
+    >>> # This will raise NoSettingsError
+    >>> try:
+    ...     settings = get_current_settings()
+    ... except NoSettingsError:
+    ...     print("No settings context available")
+    ... 
+    >>> # This will work
+    >>> from powergenome.settings import Settings
+    >>> with Settings(data={"model_year": 2030}):
+    ...     settings = get_current_settings()  # Works fine
+    """
+    pass
+
+
 class Settings:
     def __init__(self, config_path: Union[str, Path] = None, data: dict = None):
         """
@@ -503,7 +527,7 @@ def get_current_settings() -> Settings:
 
     Raises
     ------
-    RuntimeError
+    NoSettingsError
         If no settings are currently set in the context.
 
     Examples
@@ -514,13 +538,15 @@ def get_current_settings() -> Settings:
     ...     print(current["model_year"])
     2030
 
-    >>> # Outside of context - raises RuntimeError
-    >>> get_current_settings()
-    RuntimeError: No settings are currently set. Use 'with settings:' context manager.
+    >>> # Outside of context - raises NoSettingsError
+    >>> try:
+    ...     get_current_settings()
+    ... except NoSettingsError:
+    ...     print("No settings context available")
     """
     settings = _current_settings.get()
     if settings is None:
-        raise RuntimeError(
+        raise NoSettingsError(
             "No settings are currently set. Use 'with settings:' context manager."
         )
     return settings

@@ -210,7 +210,26 @@ def main():
 
     if args.fuel and args.gens:
         fuels = fuel_cost_table(
-            fuel_costs=gc.fuel_prices, generators=gc.all_resources, settings=settings
+            fuel_costs=gc.fuel_prices,
+            generators=gc.all_resources,
+            model_year=settings.get("model_year"),
+            fuel_emission_factors=settings.get("fuel_emission_factors"),
+            fuel_scenarios=settings.get("fuel_scenarios"),
+            user_fuel_price=settings.get("user_fuel_price"),
+            ccs_fuel_map=settings.get("ccs_fuel_map"),
+            co2_pipeline_filters=settings.get("co2_pipeline_filters"),
+            co2_pipeline_cost_fn=settings.get("co2_pipeline_cost_fn"),
+            ccs_disposal_cost=settings.get("ccs_disposal_cost"),
+            ccs_capture_rate=settings.get("ccs_capture_rate"),
+            carbon_tax=settings.get("carbon_tax"),
+            reduce_time_domain=settings.get("reduce_time_domain"),
+            time_domain_days_per_period=settings.get("time_domain_days_per_period"),
+            time_domain_periods=settings.get("time_domain_periods"),
+            num_hours=settings.get("num_hours"),
+            target_usd_year=settings.get("target_usd_year"),
+            user_fuel_usd_year=settings.get("user_fuel_usd_year"),
+            data_location=settings.get("data_location"),
+            dollar_year_table=settings.get("dollar_year_table"),
         )
         fuels["fuel_indices"] = range(1, len(fuels) + 1)
         fuels = remove_fuel_scenario_name(fuels, settings)

@@ -2,18 +2,38 @@
 Load fuel prices needed for the model
 """
 
-from asyncio.log import logger
+import logging
 from typing import Dict, List
+from powergenome.settings import get_current_settings, NoSettingsError
+from pathlib import Path
 
 import pandas as pd
 
 from powergenome.eia_opendata import add_user_fuel_prices
 
+logger = logging.getLogger(__name__)
+
 
 def fuel_cost_table(
     fuel_costs: pd.DataFrame,
     generators: pd.DataFrame,
-    settings: dict,
+    model_year: int = None,
+    fuel_emission_factors: dict = None,
+    fuel_scenarios: dict = None,
+    user_fuel_price: dict = None,
+    ccs_fuel_map: dict = None,
+    co2_pipeline_filters: bool = None,
+    co2_pipeline_cost_fn: str = None,
+    ccs_disposal_cost: float = None,
+    ccs_capture_rate: dict = None,
+    carbon_tax: float = None,
+    reduce_time_domain: bool = None,
+    time_domain_days_per_period: int = None,
+    time_domain_periods: int = None,
+    target_usd_year: int = None,
+    user_fuel_usd_year: dict = None,
+    data_location: Path = None,
+    dollar_year_table: str = None,
     num_hours: int = None,
 ) -> pd.DataFrame:
     """Create a table of fuel costs formatted for the GenX model.
@@ -37,24 +57,56 @@ def fuel_cost_table(
         correspond to either the "full_fuel_name" column or one of the fuels in the
         settings key "user_fuel_price". If regional prices are provided in the settings
         then the fuel name should be <region>_<fuel>.
-    settings : dict
-        Should include the key "fuel_emission_factors" with CO2 emissions in tonnes
-        per MMBTU for each fuel type used.
-
-        If adding user prices, should have the key "user_fuel_price" with value of a
-        dictionary matching user fuel names and prices. Prices can either be a single
-        price for all regions or a price per region. For example this shows biomass with
-        different prices in two regions and ZCF with the same price in all regions:
+    model_year : int, optional
+        Model year for fuel costs. Used as fallback if no settings context is available.
+    fuel_emission_factors : dict, optional
+        CO2 emissions in tonnes per MMBTU for each fuel type used. Used as fallback if no
+        settings context is available.
+    fuel_scenarios : dict, optional
+        Fuel scenario definitions. Used as fallback if no settings context is available.
+    user_fuel_price : dict, optional
+        User-defined fuel prices. Used as fallback if no settings context is available.
+        Prices can either be a single price for all regions or a price per region. For 
+        example this shows biomass with different prices in two regions and ZCF with 
+        the same price in all regions:
 
         settings["user_fuel_price"] = {
             "biomass": {"SC_VACA": 10, "PJM_DOM": 5},
             "ZCF": 15
         }
-
+        
         If the keys "target_usd_year" and "user_fuel_usd_year" are also included, fuel
         prices will be corrected to the correct USD year. "user_fuel_usd_year" should
         be a dictionary with fuel name: USD year pairings. Only fuels included in this
         dictionary will have their prices changed to the target USD year.
+    ccs_fuel_map : dict, optional
+        Mapping of CCS fuel names. Used as fallback if no settings context is available.
+    co2_pipeline_filters : bool, optional
+        Whether to apply CO2 pipeline filters. Used as fallback if no settings context is available.
+    co2_pipeline_cost_fn : str, optional
+        CO2 pipeline cost function name. Used as fallback if no settings context is available.
+    ccs_disposal_cost : float, optional
+        CCS disposal cost. Used as fallback if no settings context is available.
+    ccs_capture_rate : dict, optional
+        CCS capture rates. Used as fallback if no settings context is available.
+    carbon_tax : float, optional
+        Carbon tax value. Used as fallback if no settings context is available.
+    reduce_time_domain : bool, optional
+        Whether to reduce time domain. Used as fallback if no settings context is available.
+    time_domain_days_per_period : int, optional
+        Days per period for time domain reduction. Used as fallback if no settings context is available.
+    time_domain_periods : int, optional
+        Number of periods for time domain reduction. Used as fallback if no settings context is available.
+    num_hours : int, optional
+        Number of hours in the model. Used as fallback if no settings context is available.
+    target_usd_year : int, optional
+        Target year for USD values. Used as fallback if no settings context is available.
+    user_fuel_usd_year : dict, optional
+        USD year for user-defined fuel prices. Used as fallback if no settings context is available.
+    data_location : Path, optional
+        Path to the data location. Used as fallback if no settings context is available.
+    dollar_year_table : str, optional
+        Name of the table in the data location that contains dollar year conversions. Used as fallback if no settings context is available.
 
     Returns
     -------
@@ -65,10 +117,41 @@ def fuel_cost_table(
         Prices are identical in all hours. The first (index) column has the header
         "Time_Index" and values from 0-N, where N is the number of hours used in the model.
     """
-    all_fuel_costs = add_user_fuel_prices(settings, fuel_costs)
+    # First try to get settings from context manager
+    try:
+        settings = get_current_settings()
+        logger.debug("Using settings from context manager")
+        model_year = settings["model_year"]
+        fuel_emission_factors = settings.get("fuel_emission_factors")
+        fuel_scenarios = settings.get("fuel_scenarios")
+        user_fuel_price = settings.get("user_fuel_price")
+        ccs_fuel_map = settings.get("ccs_fuel_map")
+        co2_pipeline_filters = settings.get("co2_pipeline_filters")
+        co2_pipeline_cost_fn = settings.get("co2_pipeline_cost_fn")
+        ccs_disposal_cost = settings.get("ccs_disposal_cost")
+        ccs_capture_rate = settings.get("ccs_capture_rate")
+        carbon_tax = settings.get("carbon_tax")
+        reduce_time_domain = settings.get("reduce_time_domain")
+        time_domain_days_per_period = settings["time_domain_days_per_period"]
+        time_domain_periods = settings["time_domain_periods"]
+        target_usd_year = settings.get("target_usd_year")
+        user_fuel_usd_year = settings.get("user_fuel_usd_year")
+        data_location = settings.get("data_location")
+        dollar_year_table = settings.get("dollar_year_table")
+    except NoSettingsError:
+        logger.debug("No settings context available, using explicit parameters")
+
+    all_fuel_costs = add_user_fuel_prices(
+        fuel_costs,
+        user_fuel_price,
+        target_usd_year=target_usd_year,
+        user_fuel_usd_year=user_fuel_usd_year,
+        data_location=data_location,
+        dollar_year_table=dollar_year_table,
+    )
     unique_fuels = generators["Fuel"].drop_duplicates()
     model_year_costs = all_fuel_costs.loc[
-        all_fuel_costs["year"] == settings["model_year"], :
+        all_fuel_costs["year"] == model_year, :
     ]
     fuel_df = pd.DataFrame(unique_fuels)
 
@@ -77,7 +160,7 @@ def fuel_cost_table(
         for row in model_year_costs.itertuples(index=False, name="row")
     }
 
-    emission_dict = settings.get("fuel_emission_factors", {}) or {}
+    emission_dict = fuel_emission_factors or {}
     user_fuels = set(all_fuel_costs["fuel"]) - set(fuel_costs["fuel"])
     for u_f in user_fuels:
         if u_f not in emission_dict.keys():
@@ -91,12 +174,12 @@ def fuel_cost_table(
     for full_fuel_name in fuel_price_map:
         if (
             full_fuel_name.split("_")[-1]
-            in (settings.get("fuel_scenarios", {}) or {}).keys()
+            in (fuel_scenarios or {}).keys()
         ):
             base_fuel_name = full_fuel_name.split("_")[-1]
         elif (
             full_fuel_name.split("_")[-1]
-            in (settings.get("user_fuel_price", {}) or {}).keys()
+            in (user_fuel_price or {}).keys()
         ):
             base_fuel_name = full_fuel_name.split("_")[-1]
         else:
@@ -106,7 +189,7 @@ def fuel_cost_table(
         else:
             fuel_emission_map[full_fuel_name] = 0
 
-    ccs_fuels = (settings.get("ccs_fuel_map", {}) or {}).values()
+    ccs_fuels = (ccs_fuel_map or {}).values()
     for ccs_fuel in ccs_fuels:
         fuels = generators.loc[
             generators["Fuel"].str.contains(ccs_fuel), "Fuel"
@@ -121,25 +204,25 @@ def fuel_cost_table(
     fuel_df["CO2_content_tons_per_MMBtu"] = fuel_df["Fuel"].map(fuel_emission_map)
 
     # Slow to loop through all of the rows this way but the df shouldn't be too long
-    if settings.get("co2_pipeline_filters") and settings.get("co2_pipeline_cost_fn"):
+    if co2_pipeline_filters and co2_pipeline_cost_fn:
         ccs_disposal_cost = 0
     else:
-        ccs_disposal_cost = settings.get("ccs_disposal_cost", 0)
+        ccs_disposal_cost = ccs_disposal_cost or 0
     fuel_df = fuel_df.apply(
         adjust_ccs_fuels,
         axis=1,
-        ccs_fuels=(settings.get("ccs_fuel_map", {}) or {}).values(),
-        ccs_capture_rate=(settings.get("ccs_capture_rate", {}) or {}),
+        ccs_fuels=(ccs_fuel_map or {}).values(),
+        ccs_capture_rate=(ccs_capture_rate or {}),
         ccs_disposal_cost=ccs_disposal_cost,
     )
-    fuel_df = add_carbon_tax(fuel_df, settings.get("carbon_tax"))
+    fuel_df = add_carbon_tax(fuel_df, carbon_tax)
     fuel_df["Cost_per_MMBtu"] = fuel_df["Cost_per_MMBtu"]
     fuel_df["CO2_content_tons_per_MMBtu"] = fuel_df["CO2_content_tons_per_MMBtu"]
     fuel_df.fillna(0, inplace=True)
 
-    if settings.get("reduce_time_domain"):
-        days = settings["time_domain_days_per_period"]
-        time_periods = settings["time_domain_periods"]
+    if reduce_time_domain:
+        days = time_domain_days_per_period
+        time_periods = time_domain_periods
         num_hours = days * time_periods * 24
     elif num_hours is None:
         num_hours = 8760

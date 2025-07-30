@@ -350,38 +350,61 @@ def modify_fuel_prices(
     return mod_prices
 
 
-def add_user_fuel_prices(settings: dict, df: pd.DataFrame = None) -> pd.DataFrame:
-    """Add user fuel prices to a dataframe of user prices from AEO (or elsewhere)
+def add_user_fuel_prices(
+    df: pd.DataFrame = None,
+    user_fuel_price: dict = None,
+    target_usd_year: int = None,
+    user_fuel_usd_year: dict = None,
+    data_location: Path = None,
+    dollar_year_table: str = None,
+) -> pd.DataFrame:
+    """Add user-defined fuel prices to existing fuel price data.
+
+    This function creates a DataFrame of user-defined fuel prices and optionally
+    combines it with existing fuel price data from AEO or other sources. User fuel
+    prices can be specified as single values for all regions or as region-specific
+    prices.
 
     Parameters
     ----------
-    settings : dict
-        If adding user prices, should have the key "user_fuel_price" with value of a
-        dictionary matching user fuel names and prices. Prices can either be a single
-        price for all regions or a price per region. For example this shows biomass with
-        different prices in two regions and ZCF with the same price in all regions:
-
-        settings["user_fuel_price"] = {
-            "biomass": {"SC_VACA": 10, "PJM_DOM": 5},
-            "ZCF": 15
-        }
-
-        If the keys "target_usd_year" and "user_fuel_usd_year" are also included, fuel
-        prices will be corrected to the correct USD year. "user_fuel_usd_year" should
-        be a dictionary with fuel name: USD year pairings. Only fuels included in this
-        dictionary will have their prices changed to the target USD year.
     df : pd.DataFrame, optional
-        A dataframe with fuel prices from AEO (or elsewhere), by default None. Should
-        have columns ["year", "price", "fuel", "region", "scenario", "full_fuel_name"]
+        Existing fuel price data to combine with user prices. Should have columns
+        ["year", "price", "fuel", "region", "scenario", "full_fuel_name"]. If None,
+        only user fuel prices will be returned.
+    user_fuel_price : dict, optional
+        Dictionary mapping fuel names to prices. Prices can be specified in two formats:
+        
+        1. Single price for all regions: `{"fuel_name": price}`
+        2. Region-specific prices: `{"fuel_name": {"region1": price1, "region2": price2}}`
+        
+        Examples:
+            # Single price for all regions
+            {"hydrogen": 20.0, "biomass": 15.0}
+            
+            # Region-specific prices
+            {"biomass": {"SC_VACA": 10, "PJM_DOM": 5}, "hydrogen": 20.0}
+    target_usd_year : int, optional
+        Target year for price inflation adjustment. If provided along with
+        `user_fuel_usd_year`, user fuel prices will be adjusted to this year.
+    user_fuel_usd_year : dict, optional
+        Dictionary mapping fuel names to their base USD years for inflation adjustment.
+        Only fuels included in this dictionary will have their prices adjusted.
+        Example: `{"hydrogen": 2020, "biomass": 2019}`
+    data_location : Path, optional
+        Path to directory containing data tables.
+    dollar_year_table : str, optional
+        Name of the CSV file containing dollar year conversion factors.
 
     Returns
     -------
     pd.DataFrame
-        The combined dataframes of user prices and the other price dataframe provided
-        as input. Columns are ["year", "price", "fuel", "region", "scenario", "full_fuel_name"].
+        Combined fuel price data with columns ["year", "price", "fuel", "region", 
+        "scenario", "full_fuel_name"]. If no existing data is provided, returns only
+        user fuel prices. If no user fuel prices are provided, returns the original
+        DataFrame unchanged.
     """
 
-    if not settings.get("user_fuel_price"):
+    if not user_fuel_price:
         if df is not None:
             return df
     cols = ["year", "price", "fuel", "region", "scenario", "full_fuel_name"]
@@ -391,7 +414,7 @@ def add_user_fuel_prices(settings: dict, df: pd.DataFrame = None) -> pd.DataFram
         years = range(2020, 2051)
     fuel_data = {c: [] for c in cols}
 
-    for fuel, val in settings["user_fuel_price"].items():
+    for fuel, val in user_fuel_price.items():
         if isinstance(val, dict):
             for region, price in val.items():
                 fuel_name = f"{region}_{fuel}"
@@ -410,15 +433,15 @@ def add_user_fuel_prices(settings: dict, df: pd.DataFrame = None) -> pd.DataFram
             fuel_data["full_fuel_name"].extend([fuel] * len(years))
 
     user_fuel_price = pd.DataFrame(fuel_data)
-    if settings.get("target_usd_year"):
-        for fuel, year in (settings.get("user_fuel_usd_year", {}) or {}).items():
+    if target_usd_year:
+        for fuel, year in (user_fuel_usd_year or {}).items():
             user_fuel_price.loc[user_fuel_price["fuel"] == fuel, "price"] = (
                 inflation_price_adjustment(
                     user_fuel_price.loc[user_fuel_price["fuel"] == fuel, "price"],
                     year,
-                    settings["target_usd_year"],
-                    data_location=settings["data_location"],
-                    table_name=settings["dollar_year_table"],
+                    target_usd_year,
+                    data_location=data_location,
+                    table_name=dollar_year_table,
                 )
             )
     if df is not None:

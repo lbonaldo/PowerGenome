@@ -17,6 +17,7 @@ import yaml
 import powergenome
 from powergenome.settings import (
     Settings,
+    NoSettingsError,
     add_model_tags_to_gen_columns,
     apply_all_tag_to_regions,
     assign_model_planning_years,
@@ -1094,7 +1095,7 @@ class TestGetCurrentSettings:
 
     def test_get_current_settings_without_context(self):
         """Test that get_current_settings raises error without context."""
-        with pytest.raises(RuntimeError, match="No settings are currently set"):
+        with pytest.raises(NoSettingsError, match="No settings are currently set"):
             get_current_settings()
 
 

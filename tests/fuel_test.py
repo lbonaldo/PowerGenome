@@ -154,7 +154,13 @@ def fuel_settings():
 
 
 def test_fuel_labels_and_prices(fuel_settings):
-    df_base = add_user_fuel_prices(fuel_settings)
+    df_base = add_user_fuel_prices(
+        user_fuel_price=fuel_settings["user_fuel_price"],
+        target_usd_year=fuel_settings["target_usd_year"],
+        user_fuel_usd_year=fuel_settings["user_fuel_usd_year"],
+        data_location=fuel_settings["data_location"],
+        dollar_year_table=fuel_settings["dollar_year_table"],
+    )
 
     for fuel in [
         "p1_2_biomass",
@@ -175,7 +181,17 @@ def test_fuel_labels_and_prices(fuel_settings):
     assert gens["Fuel"].str.contains("ccs", case=False).any() == True
     assert "zerocarbonfuel1" in gens["Fuel"].values
 
-    fuel_table = fuel_cost_table(gc.fuel_prices, gens, fuel_settings)
+    # Use context manager to provide settings
+    with fuel_settings:
+        fuel_table = fuel_cost_table(gc.fuel_prices, gens)
+        assert "zerocarbonfuel1" in fuel_table.columns.to_list()
+        assert "p1_2_biomass_ccs" in fuel_table.columns.to_list()
+
+    # Use explicit parameters (fallback mode)
+    fuel_table = fuel_cost_table(
+        fuel_costs=gc.fuel_prices,
+        generators=gens,
+    )
     assert "zerocarbonfuel1" in fuel_table.columns.to_list()
     assert "p1_2_biomass_ccs" in fuel_table.columns.to_list()
 
@@ -474,6 +490,10 @@ class TestAdjustCCSFuels:
     # If the function is called with a row that contains a CCS fuel and a disposal cost that is not specified in the settings, it should issue a warning and set the disposal cost to 0.
     def test_ccs_fuel_with_no_disposal_cost_fixed(self, caplog):
         caplog.set_level(logging.DEBUG)
+        # Set the log level for the fuels module logger specifically
+        fuels_logger = logging.getLogger("powergenome.fuels")
+        fuels_logger.setLevel(logging.DEBUG)
+        
         # Arrange
         row = pd.Series(
             {
@@ -538,7 +558,7 @@ class TestFuelCostTable:
             "user_fuel_price": {"hydrogen": 20},
         }
 
-        result = fuel_cost_table(fuel_costs, generators, settings)
+        result = fuel_cost_table(fuel_costs, generators, **settings)
 
         assert isinstance(result, pd.DataFrame)
         assert result.shape[0] == 52 * 7 * 24 + 1
@@ -582,7 +602,7 @@ class TestFuelCostTable:
             "user_fuel_price": {"hydrogen": 20},
         }
 
-        result = fuel_cost_table(fuel_costs, generators, settings)
+        result = fuel_cost_table(fuel_costs, generators, **settings)
 
         assert isinstance(result, pd.DataFrame)
         assert result.shape[0] == 8761
@@ -625,7 +645,7 @@ class TestFuelCostTable:
             "user_fuel_price": {"hydrogen": 20},
         }
 
-        result = fuel_cost_table(fuel_costs, generators, settings)
+        result = fuel_cost_table(fuel_costs, generators, **settings)
 
         assert isinstance(result, pd.DataFrame)
         assert result.shape[0] == 8761
